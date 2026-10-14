@@ -163,7 +163,7 @@ Switch: **Cisco WS-C3750G-24TS** (poort gevonden via vCenter → Physical adapte
 
 | Server | NIC | Switchpoort | Functie |
 |--------|-----|-------------|---------|
-| Server 1 | vmnic0 | – | Management (access) |
+| Server 1 | vmnic0 | Gi1/0/4 | Management (access) |
 | Server 2 | vmnic0 | Gi1/0/3 | Management (access) |
 | Server 1 | vmnic1 | Gi1/0/8 | vSwitch1 (trunk) |
 | Server 2 | vmnic1 | Gi1/0/7 | vSwitch1 (trunk) |
