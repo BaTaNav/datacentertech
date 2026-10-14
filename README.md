@@ -6,6 +6,7 @@
 - [Les 1 – ESXi 8.0.2 installatie](#les-1--esxi-802-installatie)
 - [Les 2 – Router instellen](#les-2--router-instellen)
 - [Les 3 – vCenter installatie](#les-3--vcenter-installatie)
+- [Les 4 – ESX networking (vSwitch & VLANs)](#les-4--esx-networking-vswitch--vlans)
 
 ---
 
@@ -134,3 +135,145 @@ Netwerkpad:
 ```
 \\dt-srv-file1.ehb.local\Studentenstorage\TI\Datacenter Technologies\VMware\
 ```
+
+---
+
+## Les 4 – ESX networking (vSwitch & VLANs)
+
+### Doel
+
+Per ESXi-host dezelfde vSwitch aanmaken met VLANs voor **Production**, **DMZ**, **vMotion** en **Storage**.
+- Link fysieke switch → hosts: **trunk**
+- Link fysieke switch → storage device: **access** (volgende opdracht)
+
+### VLAN-plan
+
+| VLAN | Naam | Subnet | Type | Server 1 | Server 2 |
+|------|------|--------|------|----------|----------|
+| 10 | Production | 192.168.10.0/24 | VM Port Group | – | – |
+| 20 | DMZ | 192.168.20.0/24 | VM Port Group | – | – |
+| 30 | vMotion | 192.168.30.0/24 | VMkernel (vMotion) | vmk1 `192.168.30.2` | vmk1 `192.168.30.3` |
+| 40 | Storage | 192.168.40.0/24 | VMkernel | vmk2 `192.168.40.2` | vmk2 `192.168.40.3` |
+
+Management blijft op **vSwitch0** (vmk0, `192.168.1.0/24`, untagged).
+
+### Bekabeling
+
+Switch: **Cisco WS-C3750G-24TS** (poort gevonden via vCenter → Physical adapters → vmnic → tab **CDP**)
+
+| Server | NIC | Switchpoort | Functie |
+|--------|-----|-------------|---------|
+| Server 1 | vmnic0 | – | Management (access) |
+| Server 2 | vmnic0 | Gi1/0/3 | Management (access) |
+| Server 1 | vmnic1 | Gi1/0/8 | vSwitch1 (trunk) |
+| Server 2 | vmnic1 | Gi1/0/7 | vSwitch1 (trunk) |
+
+> Eerst hadden we de VLANs op vSwitch0 (vmnic0) gezet. Omdat een vmnic maar aan één vSwitch kan hangen en het voorbeeld van de leerkracht een aparte vSwitch1 gebruikt, hebben we een tweede NIC aangesloten en de portgroups verhuisd naar vSwitch1. Zo blijft management gescheiden en loopt het geen risico.
+
+### Configuratie vCenter (per host)
+
+**Oude portgroups verwijderen van vSwitch0**
+
+1. Host → **Configure → Networking → Virtual switches**
+2. Bij vMotion/Storage: eerst de VMkernel-poort (`...` → **Remove**), dan de portgroup
+3. DMZ en Production: `...` → **Remove**
+4. **Management Network** en **VM Network** blijven staan
+
+**vSwitch1 aanmaken + DMZ**
+
+1. **ADD NETWORKING** → *Virtual Machine Port Group for a Standard Switch*
+2. **New standard switch** (MTU 1500)
+3. **+** → vmnic1 (staat onder *Unclaimed adapters*) → moet onder **Active adapters** staan
+4. Label `DMZ`, VLAN `20` → Finish
+
+**Overige portgroups** (ADD NETWORKING → *existing standard switch: vSwitch1*)
+
+| Type | Label | VLAN | Services | IP server 2 |
+|------|-------|------|----------|-------------|
+| VM Port Group | Production | 10 | – | – |
+| VMkernel | vMotion | 30 | vMotion ✔ | 192.168.30.3 /24 |
+| VMkernel | Storage | 40 | geen | 192.168.40.3 /24 |
+
+Op server 1 dezelfde labels en VLANs, met IPs `.2`.
+
+### Configuratie fysieke switch
+
+```
+enable
+configure terminal
+vlan 10
+ name Production
+vlan 20
+ name DMZ
+vlan 30
+ name vMotion
+vlan 40
+ name Storage
+exit
+interface range gi1/0/7 , gi1/0/8
+ description Trunk naar ESXi vSwitch1
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40
+ spanning-tree portfast trunk
+ no shutdown
+end
+write memory
+```
+
+Controle:
+
+```
+show vlan brief
+show interfaces trunk
+show interfaces status
+```
+
+Access-poort voor het storage device (volgende opdracht):
+
+```
+interface gi1/0/X
+ switchport mode access
+ switchport access vlan 40
+ spanning-tree portfast
+```
+
+### Testen
+
+1. SSH aanzetten: host → **Configure → System → Services → SSH → START**
+2. Verbinden vanaf pc:
+
+```
+ssh root@192.168.1.10
+```
+
+3. VMkernel-interfaces controleren:
+
+```
+esxcli network ip interface ipv4 get
+```
+
+4. Pingen naar de andere host:
+
+```
+vmkping -I vmk1 192.168.30.2
+vmkping -I vmk2 192.168.40.2
+```
+
+Resultaat: beide pings **geslaagd** ✅
+
+5. SSH daarna weer op **STOP** zetten.
+
+### Problemen
+
+**Probleem 1: "There are no active physical network adapters for the switch"**
+- **Oorzaak:** vmnic1 stond niet onder *Active adapters*.
+- **Oplossing:** vmnic1 met de pijlknop naar **Active adapters** verplaatst.
+
+**Probleem 2: `vmkping` naar Storage faalt (`Host is down`, 100% packet loss)**
+- **Oorzaak:** bij de Storage-portgroup was VLAN ID **40** niet ingevuld.
+- **Oplossing:** VLAN ID op `40` gezet → ping werkt.
+
+### Volgende stap
+
+Als de storage (volgende opdracht) werkt, kunnen we **NIC teaming** toepassen: meerdere fysieke links tussen de switch en de ESXi-hosts.
