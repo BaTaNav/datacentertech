@@ -11,14 +11,14 @@
 
 ## Server- en loginoverzicht
 
-### Servers
+### Servers / iDRAC webview
 
 | Server | Username | Password |
 |--------|----------|----------|
 | Server 1 | `root` | `VHMMEPVX9WAR` |
 | Server 2 | `root` | `4W44FARVX3RV` |
 
-### iDRAC webview
+### ESXI Host client
 
 | Server | Username | Password |
 |--------|----------|----------|
