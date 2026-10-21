@@ -374,6 +374,7 @@ esxcli storage core path list | grep -i state
 ```
  
 5. In vCenter per host controleren:
+
 | Tab (iSCSI-adapter)   | Verwacht resultaat                     |
 |-----------------------|----------------------------------------|
 | Static Discovery      | IQN van de Synology verschijnt         |
