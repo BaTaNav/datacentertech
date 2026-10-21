@@ -22,9 +22,9 @@
 ### ESXI Host client
 
 | Server | Username | Password | IP address
-|--------|----------|----------|
-| Server 1 | `root` | `dfghdfgh1/` | 192.168.1.10
-| Server 2 | `root` | `STUDENT1/` | 192.168.1.11
+|--------|----------|----------|-----------|
+| Server 1 | `root` | `dfghdfgh1/` | 192.168.1.10|
+| Server 2 | `root` | `STUDENT1/` | 192.168.1.11|
 
 ### vCenter (Server 2)
 
