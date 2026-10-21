@@ -33,7 +33,7 @@
 | Name | `ESXVC01` |
 | Password | `Student1.` |
 | IP-adres | `192.168.1.100` |
-| Login | `293.268.1.100:443` |
+| Login | `192.168.1.100:443` |
 
 ### vSphere
 
