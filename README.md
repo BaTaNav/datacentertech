@@ -16,15 +16,15 @@
 
 | Server | Username | Password |
 |--------|----------|----------|
-| Server 1 | `root` | `VHMMEPVX9WAR` |
+| Server 1 | `root` | `VHMMEPVX9WAR` | 
 | Server 2 | `root` | `4W44FARVX3RV` |
 
 ### ESXI Host client
 
-| Server | Username | Password |
+| Server | Username | Password | IP address
 |--------|----------|----------|
-| Server 1 | `root` | `dfghdfgh1/` |
-| Server 2 | `root` | `STUDENT1/` |
+| Server 1 | `root` | `dfghdfgh1/` | 192.168.1.10
+| Server 2 | `root` | `STUDENT1/` | 192.168.1.11
 
 ### vCenter (Server 2)
 
