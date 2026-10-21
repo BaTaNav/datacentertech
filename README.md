@@ -277,3 +277,109 @@ Resultaat: beide pings **geslaagd** ✅
 ### Volgende stap
 
 Als de storage (volgende opdracht) werkt, kunnen we **NIC teaming** toepassen: meerdere fysieke links tussen de switch en de ESXi-hosts.
+
+
+## Les 5 – Shared storage (iSCSI)
+ 
+### Doel
+ 
+Via het IP storage netwerk (VLAN 40) en **iSCSI** shared storage van de Synology NAS koppelen aan beide ESXi-hosts. Alle config gebeurt via **vCenter** (niet via de ESXi Host Client).
+ 
+### IP-plan storage (VLAN 40 – 192.168.40.0/24)
+ 
+| Toestel           | Interface | IP-adres         |
+|-------------------|-----------|------------------|
+| Server 1          | vmk2      | `192.168.40.2`   |
+| Server 2          | vmk2      | `192.168.40.3`   |
+| Synology NAS (SAN)| LAN       | `192.168.40.100` |
+ 
+Geen gateway nodig: storage-verkeer blijft op laag 2.
+ 
+### Bekabeling
+ 
+| Toestel      | Switchpoort | Modus            |
+|--------------|-------------|------------------|
+| Synology NAS | Gi1/0/5     | access VLAN 40   |
+| Server 1     | Gi1/0/8     | trunk (vSwitch1) |
+| Server 2     | Gi1/0/7     | trunk (vSwitch1) |
+ 
+### Configuratie fysieke switch
+ 
+De trunks naar de hosts (Gi1/0/7, Gi1/0/8) laten VLAN 40 al toe (les 4). Enkel de poort van de NAS moest nog ingesteld worden:
+ 
+```
+enable
+configure terminal
+interface gi1/0/5
+ description NAS-Synology
+ switchport mode access
+ switchport access vlan 40
+ spanning-tree portfast
+ no shutdown
+end
+write memory
+```
+ 
+Controle:
+ 
+```
+show interfaces gi1/0/5 status
+show vlan brief
+show interfaces trunk
+```
+ 
+### Configuratie vCenter (per host)
+ 
+**1. Software iSCSI adapter toevoegen**
+ 
+1. Host → **Configure → Storage Adapters**
+2. **Add Software Adapter** → **Add software iSCSI adapter** → OK
+3. Er verschijnt een nieuwe adapter `vmhbaXX` (iSCSI Software Adapter)
+**2. Network Port Binding**
+ 
+1. Selecteer de iSCSI-adapter → tab **Network Port Binding** → **Add**
+2. Kies **vmk2** (portgroup `Storage`, VLAN 40) → OK
+3. Teaming-override is niet nodig: vSwitch1 heeft maar één uplink (vmnic1)
+**3. Link naar de SAN (Dynamic Discovery)**
+ 
+1. Tab **Dynamic Discovery** → **Add**
+2. iSCSI server: `192.168.40.100`, poort `3260`
+3. OK → **Rescan Adapter**
+**4. Datastore aanmaken (maar één keer, op één host)**
+ 
+1. Host → **Actions → Storage → New Datastore**
+2. **VMFS** → naam `iSCSI-DS01` → Synology LUN selecteren → **VMFS 6** → volledige grootte → Finish
+3. Op de andere host: **Rescan Storage** → de datastore verschijnt automatisch
+> De datastore **niet** op beide hosts aanmaken/formatteren, anders wordt de LUN gewist.
+ 
+### Testen
+ 
+1. SSH aanzetten: host → **Configure → System → Services → SSH → START**
+2. Verbinden vanaf pc:
+```
+ssh root@<management-IP host>
+```
+ 
+3. Netwerk en iSCSI-poort testen:
+```
+vmkping -I vmk2 192.168.40.100
+nc -z 192.168.40.100 3260
+```
+ 
+4. iSCSI-sessie en devices controleren:
+```
+esxcli iscsi session list
+esxcli storage core device list | grep -i synology
+esxcli storage core path list | grep -i state
+```
+ 
+5. In vCenter per host controleren:
+| Tab (iSCSI-adapter)   | Verwacht resultaat                     |
+|-----------------------|----------------------------------------|
+| Static Discovery      | IQN van de Synology verschijnt         |
+| Devices               | Synology LUN, status **Attached**      |
+| Paths                 | **Active**                             |
+| Network Port Binding  | vmk2 → **Active**                      |
+ 
+6. Beide hosts zien dezelfde datastore `iSCSI-DS01` → shared storage werkt ✅
+7. SSH daarna weer op **STOP** zetten.
