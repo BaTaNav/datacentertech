@@ -384,3 +384,95 @@ esxcli storage core path list | grep -i state
  
 6. Beide hosts zien dezelfde datastore `iSCSI-DS01` → shared storage werkt ✅
 7. SSH daarna weer op **STOP** zetten.
+
+## Les 6 – NIC teaming (vSwitch1)
+
+### Doel
+
+Een tweede fysieke link op de VLAN-trunk (vSwitch1), voor redundantie en load balancing. Als één kabel, NIC of switchpoort uitvalt, blijft het netwerk werken.
+
+### Bekabeling (Server 2)
+
+Nieuwe NIC gevonden via vCenter → **Physical adapters**: vmnic3 stond op **1 Gbit/s** en hing nog aan geen vSwitch. De switchpoort staat in de tab **CDP**.
+
+| NIC | Switchpoort | Functie |
+|-----|-------------|---------|
+| vmnic1 | Gi1/0/7 | vSwitch1 (trunk) |
+| vmnic3 | Gi1/0/10 | vSwitch1 (trunk) – nieuw |
+
+### Configuratie fysieke switch
+
+De nieuwe poort krijgt dezelfde trunk-config als Gi1/0/7. Er komt geen EtherChannel, want een standard vSwitch ondersteunt geen LACP.
+
+```
+enable
+configure terminal
+interface gi1/0/10
+ description Trunk naar ESXi vSwitch1 (teaming)
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40
+ spanning-tree portfast trunk
+ no shutdown
+end
+write memory
+```
+
+Controle met `show interfaces trunk`: Gi1/0/7, Gi1/0/8 en Gi1/0/10 staan op **trunking** met VLAN 10,20,30,40.
+
+### Configuratie vCenter
+
+**1. vmnic3 toevoegen aan vSwitch1**
+
+1. Host → **Configure → Networking → Virtual switches** → vSwitch1 → **Manage Physical Adapters**
+2. **+** → vmnic3 → OK
+3. vmnic1 en vmnic3 staan allebei onder **Active adapters**
+
+Teaming policy van vSwitch1 (standaard gelaten):
+
+| Instelling | Waarde |
+|------------|--------|
+| Load balancing | Route based on originating virtual port |
+| Network failure detection | Link status only |
+| Notify switches | Yes |
+| Failback | Yes |
+
+**2. Override op de Storage-portgroup (iSCSI)**
+
+Een VMkernel-poort met iSCSI port binding mag maar **één actieve uplink** hebben, en **geen standby**.
+
+1. vSwitch1 → `...` bij **Storage** → **Edit Settings** → **Teaming and failover**
+2. **Override** aanvinken
+3. Active: **vmnic1**. Standby: leeg. Unused: **vmnic3**
+
+### Testen
+
+Via SSH op de host:
+
+```
+esxcli network vswitch standard portgroup policy failover get -p Storage
+esxcli iscsi networkportal list
+```
+
+| Controle | Resultaat |
+|----------|-----------|
+| Failover Storage | Active `vmnic1`, Standby leeg, Unused `vmnic3` |
+| iSCSI port binding vmk2 | **compliant** / **active** |
+| vmhba64 Devices / Paths | Synology LUN zichtbaar |
+| Datastore | `iSCSI-DS01` zichtbaar |
+
+NIC teaming werkt ✅. SSH daarna weer op **STOP** zetten.
+
+### Problemen
+
+**Probleem 1: vmk2 "Not compliant" en vmk2 niet meer toe te voegen**
+- **Oorzaak:** na het toevoegen van vmnic3 stond die bij de Storage-portgroup op **Standby**. Een iSCSI-binding met een standby uplink is niet compliant, en vCenter toont alleen compliant VMkernel-poorten bij **ADD**.
+- **Oplossing:** in vCenter vmnic3 naar **Unused adapters** verplaatst. Daarna vmk2 opnieuw gebonden via SSH:
+```
+esxcli iscsi networkportal add -A vmhba64 -n vmk2
+esxcli storage core adapter rescan -A vmhba64
+```
+
+**Probleem 2: `-u` bij `failover set` werkt niet als "unused"**
+- **Oorzaak:** `-u` betekent `--use-vswitch` (de instellingen van de vSwitch overnemen), niet unused. Ook een NIC die je niet vermeldt, verdwijnt niet automatisch van standby.
+- **Oplossing:** Unused via de vCenter GUI instellen.
