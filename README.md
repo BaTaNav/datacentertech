@@ -1,5 +1,4 @@
 # Documentatie – Datacenter Technologies
-
 ## Inhoud
 
 - [Server- en loginoverzicht](#server--en-loginoverzicht)
@@ -7,6 +6,8 @@
 - [Les 2 – Router instellen](#les-2--router-instellen)
 - [Les 3 – vCenter installatie](#les-3--vcenter-installatie)
 - [Les 4 – ESX networking (vSwitch & VLANs)](#les-4--esx-networking-vswitch--vlans)
+- [Les 5 – Shared storage (iSCSI)](#les-5--shared-storage-iscsi)
+- [Les 6 – NIC teaming (vSwitch1)](#les-6--nic-teaming-vswitch1)
 
 ---
 
