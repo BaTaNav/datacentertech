@@ -566,7 +566,7 @@ NIC teaming werkt ✅. SSH daarna weer op **STOP** zetten.
 
 **Probleem 1: "Select a valid destination storage" bij het uitrollen van een VM uit de template**
 - **Oorzaak:** de datastore `iSCSI-DS01` was verdwenen. Enkel de lokale datastores (`datastore1`, `datastore2`) waren nog zichtbaar.
-- **Oplossing:** `<...>`
+- **Oplossing:** iSCSI port binding van vmk2 hersteld (zie probleem 2). Daarna **Rescan Storage** → `iSCSI-DS01` was terug zichtbaar.
 
 **Probleem 2: vmk2 "Not compliant" en vmk2 niet meer toe te voegen (NIC teaming)**
 - **Oorzaak:** na het toevoegen van vmnic3 stond die bij de Storage-portgroup op **Standby**. Een iSCSI-binding met een standby uplink is niet compliant, en vCenter toont alleen compliant VMkernel-poorten bij **ADD**.
