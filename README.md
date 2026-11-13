@@ -7,7 +7,7 @@
 - [Les 3 – vCenter installatie](#les-3--vcenter-installatie)
 - [Les 4 – ESX networking (vSwitch & VLANs)](#les-4--esx-networking-vswitch--vlans)
 - [Les 5 – Shared storage (iSCSI)](#les-5--shared-storage-iscsi)
-- [Les 6 – NIC teaming (vSwitch1)](#les-6--nic-teaming-vswitch1)
+- [Les 6 – Cluster](#les-6--cluster)
 
 ---
 
@@ -280,6 +280,8 @@ Resultaat: beide pings **geslaagd** ✅
 Als de storage (volgende opdracht) werkt, kunnen we **NIC teaming** toepassen: meerdere fysieke links tussen de switch en de ESXi-hosts.
 
 
+---
+
 ## Les 5 – Shared storage (iSCSI)
  
 ### Doel
@@ -336,16 +338,19 @@ show interfaces trunk
 1. Host → **Configure → Storage Adapters**
 2. **Add Software Adapter** → **Add software iSCSI adapter** → OK
 3. Er verschijnt een nieuwe adapter `vmhbaXX` (iSCSI Software Adapter)
+
 **2. Network Port Binding**
  
 1. Selecteer de iSCSI-adapter → tab **Network Port Binding** → **Add**
 2. Kies **vmk2** (portgroup `Storage`, VLAN 40) → OK
 3. Teaming-override is niet nodig: vSwitch1 heeft maar één uplink (vmnic1)
+
 **3. Link naar de SAN (Dynamic Discovery)**
  
 1. Tab **Dynamic Discovery** → **Add**
 2. iSCSI server: `192.168.40.100`, poort `3260`
 3. OK → **Rescan Adapter**
+
 **4. Datastore aanmaken (maar één keer, op één host)**
  
 1. Host → **Actions → Storage → New Datastore**
@@ -386,13 +391,106 @@ esxcli storage core path list | grep -i state
 6. Beide hosts zien dezelfde datastore `iSCSI-DS01` → shared storage werkt ✅
 7. SSH daarna weer op **STOP** zetten.
 
-## Les 6 – NIC teaming (vSwitch1)
+---
+
+## Les 6 – Cluster
 
 ### Doel
 
+De cluster verder opbouwen: hosts in een cluster met HA en DRS, twee resource pools met eigen gebruikers, Windows-templates (sysprep), vMotion en HA/FT testen en NIC teaming op de trunk.
+
+### Cluster aanmaken
+
+1. Rechtsklik op het **Datacenter** → **New Cluster**
+2. Naam: `<clusternaam>`
+3. **vSphere DRS** aan, **vSphere HA** aan, **vSAN** uit
+4. Cluster image: `<gekozen optie>`
+
+> **vSAN** bundelt de lokale schijven van de hosts tot één gedeelde datastore. Dat is hier niet nodig, want de shared storage komt van de Synology via iSCSI (les 5).
+
+### EVC
+
+EVC staat **uit**, op advies van de leerkracht.
+
+> EVC zet alle hosts op dezelfde CPU-featureset, zodat vMotion werkt tussen hosts met verschillende CPU-generaties. Bij hosts met dezelfde CPU is dat niet nodig.
+
+### Hosts toevoegen
+
+1. Server 1 (`192.168.1.10`) en Server 2 (`192.168.1.11`) naar de cluster slepen
+2. Bij de vraag over VM's/resource pools: **root resource pool**
+
+### vSphere DRS en HA
+
+**DRS** (cluster → Configure → Services → vSphere DRS → Edit)
+
+| Instelling | Waarde |
+|------------|--------|
+| Automation level | Fully Automated |
+| Migration threshold | 3 |
+
+**HA** (cluster → Configure → Services → vSphere Availability → Edit)
+
+| Instelling | Waarde |
+|------------|--------|
+| Host failure response | Restart VMs |
+| Admission control | Host failures cluster tolerates: 1 |
+| Heartbeat datastore | `iSCSI-DS01` |
+
+### Resource pools en gebruikers
+
+**Resource pools** (cluster → New Resource Pool)
+
+| Pool | CPU limit | Memory limit |
+|------|-----------|--------------|
+| `<Pool-A>` | `<...>` | `<...>` |
+| `<Pool-B>` | `<...>` | `<...>` |
+
+**Gebruikers en groepen** (Administration → Single Sign On → Users and Groups, domein `vsphere.local`)
+
+| Groep | Pool | Gebruikers | Wachtwoord |
+|-------|------|------------|------------|
+| `<GroepA>` | `<Pool-A>` | `<...>` | `Student1.` |
+| `<GroepB>` | `<Pool-B>` | `<...>` | `Student1.` |
+
+**Rol:** Administration → Roles → clone **Resource pool administrator (sample)** → `<rolnaam>`
+
+**Rechten**
+
+| Object | Groep | Rol | Propagate |
+|--------|-------|-----|-----------|
+| `<Pool-A>` | `<GroepA>` | `<rolnaam>` | ✔ |
+| `<Pool-B>` | `<GroepB>` | `<rolnaam>` | ✔ |
+| `iSCSI-DS01` | beide | Datastore consumer (sample) | – |
+| Production / DMZ | beide | Network administrator (sample) | – |
+
+### Windows-templates
+
+1. ISO's van de fileserver uploaden naar de datastore
+2. Nieuwe VM aanmaken → Windows Server installeren via de web console
+3. **VMware Tools** installeren (VM → Guest OS → Install VMware Tools) → de VM herstarten
+4. Controle: VM → Summary → *VMware Tools: Running*
+5. VM afsluiten → **Template → Convert to Template**
+6. Hetzelfde voor de Windows Client
+
+> Geen manuele sysprep: vCenter voert sysprep zelf uit via de Customization Spec bij het uitrollen.
+
+**Customization Spec** (Policies and Profiles → VM Customization Specifications → New)
+
+| Instelling | Waarde |
+|------------|--------|
+| Name | `<specnaam>` |
+| Target guest OS | Windows, nieuwe SID genereren ✔ |
+| Computer name | Use the virtual machine name |
+| Administrator password | `<...>` |
+| Time zone | (GMT+01:00) Brussels |
+| Network | Standard (DHCP) |
+| Workgroup | `WORKGROUP` |
+
+### NIC teaming (vSwitch1)
+
 Een tweede fysieke link op de VLAN-trunk (vSwitch1), voor redundantie en load balancing. Als één kabel, NIC of switchpoort uitvalt, blijft het netwerk werken.
 
-### Bekabeling (Server 2)
+#### Bekabeling (Server 2)
 
 Nieuwe NIC gevonden via vCenter → **Physical adapters**: vmnic3 stond op **1 Gbit/s** en hing nog aan geen vSwitch. De switchpoort staat in de tab **CDP**.
 
@@ -401,7 +499,7 @@ Nieuwe NIC gevonden via vCenter → **Physical adapters**: vmnic3 stond op **1 G
 | vmnic1 | Gi1/0/7 | vSwitch1 (trunk) |
 | vmnic3 | Gi1/0/10 | vSwitch1 (trunk) – nieuw |
 
-### Configuratie fysieke switch
+#### Configuratie fysieke switch
 
 De nieuwe poort krijgt dezelfde trunk-config als Gi1/0/7. Er komt geen EtherChannel, want een standard vSwitch ondersteunt geen LACP.
 
@@ -421,7 +519,7 @@ write memory
 
 Controle met `show interfaces trunk`: Gi1/0/7, Gi1/0/8 en Gi1/0/10 staan op **trunking** met VLAN 10,20,30,40.
 
-### Configuratie vCenter
+#### Configuratie vCenter
 
 **1. vmnic3 toevoegen aan vSwitch1**
 
@@ -446,7 +544,7 @@ Een VMkernel-poort met iSCSI port binding mag maar **één actieve uplink** hebb
 2. **Override** aanvinken
 3. Active: **vmnic1**. Standby: leeg. Unused: **vmnic3**
 
-### Testen
+#### Testen
 
 Via SSH op de host:
 
@@ -466,7 +564,11 @@ NIC teaming werkt ✅. SSH daarna weer op **STOP** zetten.
 
 ### Problemen
 
-**Probleem 1: vmk2 "Not compliant" en vmk2 niet meer toe te voegen**
+**Probleem 1: "Select a valid destination storage" bij het uitrollen van een VM uit de template**
+- **Oorzaak:** de datastore `iSCSI-DS01` was verdwenen. Enkel de lokale datastores (`datastore1`, `datastore2`) waren nog zichtbaar.
+- **Oplossing:** `<...>`
+
+**Probleem 2: vmk2 "Not compliant" en vmk2 niet meer toe te voegen (NIC teaming)**
 - **Oorzaak:** na het toevoegen van vmnic3 stond die bij de Storage-portgroup op **Standby**. Een iSCSI-binding met een standby uplink is niet compliant, en vCenter toont alleen compliant VMkernel-poorten bij **ADD**.
 - **Oplossing:** in vCenter vmnic3 naar **Unused adapters** verplaatst. Daarna vmk2 opnieuw gebonden via SSH:
 ```
@@ -474,6 +576,12 @@ esxcli iscsi networkportal add -A vmhba64 -n vmk2
 esxcli storage core adapter rescan -A vmhba64
 ```
 
-**Probleem 2: `-u` bij `failover set` werkt niet als "unused"**
+**Probleem 3: `-u` bij `failover set` werkt niet als "unused" (NIC teaming)**
 - **Oorzaak:** `-u` betekent `--use-vswitch` (de instellingen van de vSwitch overnemen), niet unused. Ook een NIC die je niet vermeldt, verdwijnt niet automatisch van standby.
 - **Oplossing:** Unused via de vCenter GUI instellen.
+
+### Nog te doen
+
+- VM's uitrollen uit de templates en vMotion testen
+- HA / Fault Tolerance testen
+- DRS testen met CPU-load
